@@ -251,9 +251,7 @@ pub fn encode_rightset(new_rights: RightSet, version_of_index_format: u8) -> Str
                 outbuff.push_str(&right.id);
                 outbuff.push(';');
 
-                let summ_counters: u16 = right.counters.values().sum();
-
-                if summ_counters < 2 || version_of_index_format == 1 {
+                if version_of_index_format == 1 {
                     encode_value_v1(right, &mut outbuff);
                 } else {
                     encode_value_v2(right, &mut outbuff);

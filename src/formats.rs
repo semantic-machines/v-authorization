@@ -48,7 +48,7 @@ fn access8_to_char(a: u8) -> Option<char> {
     }
 }
 
-pub fn update_counters(counters: &mut HashMap<char, u16>, prev_access: u8, cur_access: u8, is_deleted: bool) -> u8 {
+pub fn update_counters(counters: &mut HashMap<char, u16>, prev_access: u8, cur_access: u8, is_deleted: bool, is_drop_count: bool) -> u8 {
     let mut out_access = cur_access;
 
     for access_c in ACCESS_C_FULL_LIST.iter() {
@@ -56,14 +56,23 @@ pub fn update_counters(counters: &mut HashMap<char, u16>, prev_access: u8, cur_a
             if let Some(cc) = counters.get_mut(access_c) {
                 if out_access & check_bit > 0 {
                     if is_deleted {
-                        if prev_access & check_bit > 0 {
-                            *cc -= 1;
-                            if *cc == 0 {
-                                out_access &= !check_bit;
+                        if is_drop_count {
+                            *cc = 0;
+                            out_access &= !check_bit;
+                        } else {
+                            if prev_access & check_bit > 0 {
+                                *cc -= 1;
+                                if *cc == 0 {
+                                    out_access &= !check_bit;
+                                }
                             }
                         }
                     } else {
-                        *cc += 1;
+                        if is_drop_count {
+                            *cc = 1;
+                        } else {
+                            *cc += 1;
+                        }
                         out_access |= check_bit;
                     }
                 }

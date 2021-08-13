@@ -55,25 +55,32 @@ pub fn update_counters(counters: &mut HashMap<char, u16>, prev_access: u8, cur_a
         if let Some(check_bit) = access8_from_char(*access_c) {
             if let Some(cc) = counters.get_mut(access_c) {
                 if out_access & check_bit > 0 {
-                    if is_deleted {
-                        if is_drop_count {
+                    if is_drop_count {
+                        if is_deleted {
                             *cc = 0;
                             out_access &= !check_bit;
                         } else {
+                            *cc = 1;
+                            out_access |= check_bit;
+                        }
+                    } else {
+                        if is_deleted {
                             if prev_access & check_bit > 0 {
                                 *cc -= 1;
                                 if *cc == 0 {
                                     out_access &= !check_bit;
                                 }
                             }
-                        }
-                    } else {
-                        if is_drop_count {
-                            *cc = 1;
                         } else {
                             *cc += 1;
+                            out_access |= check_bit;
                         }
-                        out_access |= check_bit;
+                    }
+                } else {
+                    if is_drop_count {
+                        if *cc > 0 {
+                            out_access |= check_bit;
+                        }
                     }
                 }
             } else {

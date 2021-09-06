@@ -30,7 +30,7 @@ impl Right {
 
 pub type RightSet = HashMap<String, Right>;
 
-pub struct AzContext<'a> {
+pub(crate) struct AzContext<'a> {
     id: &'a str,
     user_id: &'a str,
     request_access: u8,

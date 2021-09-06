@@ -39,6 +39,10 @@ pub enum Access {
     CantDelete = 128u8,
 }
 
+pub trait AuthorizationContext {
+    fn authorize(&mut self, uri: &str, user_uri: &str, request_access: u8, _is_check_for_reload: bool, trace: Option<&mut Trace>) -> Result<u8, i64>;
+}
+
 pub trait Storage {
     fn get(&self, key: &str) -> Result<String, i64>;
     fn fiber_yield(&self);

@@ -5,6 +5,7 @@ pub mod formats;
 use crate::common::*;
 use crate::formats::*;
 use std::collections::HashMap;
+use std::io;
 
 pub struct Right {
     pub id: String,
@@ -52,14 +53,7 @@ impl<'a> Default for AzContext<'a> {
     }
 }
 
-fn authorize_obj_group(
-    azc: &mut AzContext,
-    trace: &mut Trace,
-    request_access: u8,
-    object_group_id: &str,
-    object_group_access: u8,
-    db: &dyn Storage,
-) -> Result<bool, i64> {
+fn authorize_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8, object_group_id: &str, object_group_access: u8, db: &dyn Storage) -> io::Result<bool> {
     let mut is_authorized = false;
     let mut calc_bits;
 
@@ -92,7 +86,7 @@ fn authorize_obj_group(
     };
 
     match db.get(&acl_key) {
-        Ok(str) => {
+        Ok(Some(str)) => {
             let permissions: &mut Vec<Right> = &mut Vec::new();
 
             decode_rec_to_rights(&str, permissions);
@@ -166,13 +160,12 @@ fn authorize_obj_group(
                     }
                 }
             }
-        }
+        },
         Err(e) => {
-            if e < 0 {
-                eprintln!("ERR! Authorize: authorize_obj_group:main, object_group_id={:?}", object_group_id);
-                return Err(e);
-            }
-        }
+            eprintln!("ERR! Authorize: authorize_obj_group:main, object_group_id={:?}", object_group_id);
+            return Err(e);
+        },
+        _ => {},
     }
 
     if (azc.calc_right_res & request_access) == request_access {
@@ -185,7 +178,7 @@ fn authorize_obj_group(
     Ok(false)
 }
 
-fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8, uri: &str, access: u8, level: u8, db: &dyn Storage) -> Result<bool, i64> {
+fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8, uri: &str, access: u8, level: u8, db: &dyn Storage) -> io::Result<bool> {
     if level > 32 {
         return Ok(false);
     }
@@ -196,7 +189,7 @@ fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8,
     let groups_set_len;
 
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + uri)) {
-        Ok(groups_str) => {
+        Ok(Some(groups_str)) => {
             let groups_set: &mut Vec<Right> = &mut Vec::new();
             decode_rec_to_rights(&groups_str, groups_set);
 
@@ -272,12 +265,10 @@ fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8,
                                 return Ok(true);
                             }
                         }
-                    }
+                    },
                     Err(e) => {
-                        if e < 0 {
-                            return Err(e);
-                        }
-                    }
+                        return Err(e);
+                    },
                 }
 
                 prepare_obj_group(azc, trace, request_access, &group.id, new_access, level + 1, db)?;
@@ -288,29 +279,28 @@ fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8,
             }
 
             Ok(false)
-        }
+        },
         Err(e) => {
-            if e < 0 {
-                eprintln!("ERR! Authorize: prepare_obj_group {:?}", uri);
-                Err(e)
-            } else {
-                if level == 0 {
-                    azc.is_found_exclusive_az = true;
-                }
-                Ok(false)
+            eprintln!("ERR! Authorize: prepare_obj_group {:?}", uri);
+            Err(e)
+        },
+        Ok(None) => {
+            if level == 0 {
+                azc.is_found_exclusive_az = true;
             }
-        }
+            Ok(false)
+        },
     }
 }
 
-fn authorize_obj_groups(id: &str, request_access: u8, db: &dyn Storage, trace: &mut Trace, azc: &mut AzContext) -> Option<Result<u8, i64>> {
+fn authorize_obj_groups(id: &str, request_access: u8, db: &dyn Storage, trace: &mut Trace, azc: &mut AzContext) -> Option<io::Result<u8>> {
     for gr in ["v-s:AllResourcesGroup", id].iter() {
         match authorize_obj_group(azc, trace, request_access, gr, 15, db) {
             Ok(res) => {
                 if res && final_check(azc, trace) {
                     return Some(Ok(azc.calc_right_res));
                 }
-            }
+            },
             Err(e) => return Some(Err(e)),
         }
     }
@@ -320,7 +310,7 @@ fn authorize_obj_groups(id: &str, request_access: u8, db: &dyn Storage, trace: &
             if res && final_check(azc, trace) {
                 return Some(Ok(azc.calc_right_res));
             }
-        }
+        },
 
         Err(e) => return Some(Err(e)),
     }
@@ -328,7 +318,7 @@ fn authorize_obj_groups(id: &str, request_access: u8, db: &dyn Storage, trace: &
     None
 }
 
-pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &dyn Storage, trace: &mut Trace) -> Result<u8, i64> {
+pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &dyn Storage, trace: &mut Trace) -> io::Result<u8> {
     let s_groups = &mut HashMap::new();
 
     let mut azc = AzContext {
@@ -352,9 +342,8 @@ pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &dyn Storage, 
         print_to_trace_info(trace, format!("authorize uri={}, user={}, request_access={}\n", id, user_id, access_to_pretty_string(request_access)));
     }
 
-    if let Err(e) = get_resource_groups(azc.walked_groups_s, azc.tree_groups_s, trace, user_id, 15, s_groups, 0, db, &mut azc.is_need_exclusive_az, false) {
-        return Err(e);
-    }
+    get_resource_groups(&mut azc, trace, user_id, 15, s_groups, 0, db, false)?;
+
     db.fiber_yield();
 
     azc.subject_groups = s_groups;
@@ -363,10 +352,11 @@ pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &dyn Storage, 
     let first_level_object_groups: &mut Vec<Right> = &mut Vec::new();
     first_level_object_groups.push(Right::new(id));
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + id)) {
-        Ok(groups_str) => {
+        Ok(Some(groups_str)) => {
             decode_rec_to_rights(&groups_str, first_level_object_groups);
-        }
-        Err(_e) => {}
+        },
+        Err(_e) => {},
+        _ => {},
     }
 
     let mut request_access_with_filter = request_access;

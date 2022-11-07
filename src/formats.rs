@@ -147,7 +147,7 @@ fn decode_value_v1(value: &str, rr: &mut Right, with_count: bool) {
                 None => {
                     eprintln!("ERR! decode_value_v1, fail parse, access is not hex digit {}", value);
                     continue;
-                }
+                },
             }
             shift += 4;
         }

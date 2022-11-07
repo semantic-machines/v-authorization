@@ -2,6 +2,7 @@ use crate::formats::*;
 use crate::{AzContext, Right};
 use core::fmt;
 use std::collections::HashMap;
+use std::io;
 
 pub const PERMISSION_PREFIX: &str = "P";
 pub const FILTER_PREFIX: &str = "F";
@@ -11,7 +12,7 @@ pub static ACCESS_8_FULL_LIST: [u8; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 pub static ACCESS_PREDICATE_LIST: [&str; 9] = ["", "v-s:canCreate", "v-s:canRead", "", "v-s:canUpdate", "", "", "", "v-s:canDelete"];
 
 /// Битовые поля для прав
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 #[repr(u8)]
 pub enum Access {
     /// Создание
@@ -40,12 +41,12 @@ pub enum Access {
 }
 
 pub trait AuthorizationContext {
-    fn authorize(&mut self, uri: &str, user_uri: &str, request_access: u8, _is_check_for_reload: bool) -> Result<u8, i64>;
-    fn authorize_and_trace(&mut self, uri: &str, user_uri: &str, request_access: u8, _is_check_for_reload: bool, trace: &mut Trace) -> Result<u8, i64>;
+    fn authorize(&mut self, uri: &str, user_uri: &str, request_access: u8, _is_check_for_reload: bool) -> io::Result<u8>;
+    fn authorize_and_trace(&mut self, uri: &str, user_uri: &str, request_access: u8, _is_check_for_reload: bool, trace: &mut Trace) -> io::Result<u8>;
 }
 
 pub trait Storage {
-    fn get(&self, key: &str) -> Result<String, i64>;
+    fn get(&self, key: &str) -> io::Result<Option<String>>;
     fn fiber_yield(&self);
 }
 
@@ -69,23 +70,21 @@ pub struct Trace<'a> {
 }
 
 pub(crate) fn get_resource_groups(
-    walked_groups: &mut HashMap<String, (u8, char)>,
-    tree_groups: &mut HashMap<String, String>,
+    ctx: &mut AzContext,
     trace: &mut Trace,
     uri: &str,
     access: u8,
     results: &mut HashMap<String, Right>,
     level: u8,
     db: &dyn Storage,
-    out_f_is_exclusive: &mut bool,
     ignore_exclusive: bool,
-) -> Result<bool, i64> {
+) -> io::Result<bool> {
     if level > 32 {
         return Ok(true);
     }
 
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + uri)) {
-        Ok(groups_str) => {
+        Ok(Some(groups_str)) => {
             let groups_set: &mut Vec<Right> = &mut Vec::new();
             decode_rec_to_rights(&groups_str, groups_set);
 
@@ -99,17 +98,17 @@ pub(crate) fn get_resource_groups(
                 group.access = new_access;
 
                 let mut preur_access = 0;
-                if walked_groups.contains_key(&group.id) {
-                    preur_access = walked_groups[&group.id].0;
-                    if (preur_access & new_access) == new_access && group.marker == walked_groups[&group.id].1 {
+                if ctx.walked_groups_s.contains_key(&group.id) {
+                    preur_access = ctx.walked_groups_s[&group.id].0;
+                    if (preur_access & new_access) == new_access && group.marker == ctx.walked_groups_s[&group.id].1 {
                         continue;
                     }
                 }
 
-                walked_groups.insert(group.id.clone(), ((new_access | preur_access), group.marker));
+                ctx.walked_groups_s.insert(group.id.clone(), ((new_access | preur_access), group.marker));
 
                 if trace.is_info {
-                    tree_groups.insert(group.id.clone(), uri.to_string());
+                    ctx.tree_groups_s.insert(group.id.clone(), uri.to_string());
                 }
 
                 if uri == group.id {
@@ -124,17 +123,13 @@ pub(crate) fn get_resource_groups(
 
                 db.fiber_yield();
 
-                if let Err(e) = get_resource_groups(walked_groups, tree_groups, trace, &group.id, 15, results, level + 1, db, out_f_is_exclusive, t_ignore_exclusive) {
-                    if e < 0 {
-                        return Err(e);
-                    }
-                }
+                get_resource_groups(ctx, trace, &group.id, 15, results, level + 1, db, t_ignore_exclusive)?;
 
                 if !ignore_exclusive && group.marker == M_IS_EXCLUSIVE {
                     if trace.is_info {
-                        print_to_trace_info(trace, format!("FOUND EXCLUSIVE RESTRICTIONS, PATH={} \n", &get_path(tree_groups, group.id.clone())));
+                        print_to_trace_info(trace, format!("FOUND EXCLUSIVE RESTRICTIONS, PATH={} \n", &get_path(ctx.tree_groups_s, group.id.clone())));
                     }
-                    *out_f_is_exclusive = true;
+                    ctx.is_need_exclusive_az = true;
                 }
 
                 let new_group_marker;
@@ -146,10 +141,10 @@ pub(crate) fn get_resource_groups(
                         } else {
                             new_group_marker = val.marker;
                         }
-                    }
+                    },
                     None => {
                         new_group_marker = group.marker;
-                    }
+                    },
                 }
 
                 results.insert(
@@ -164,15 +159,14 @@ pub(crate) fn get_resource_groups(
                     },
                 );
             }
-        }
+        },
         Err(e) => {
-            if e < 0 {
-                eprintln!("ERR! Authorize: get_resource_groups {:?}", uri);
-                return Err(e);
-            } else {
-                return Ok(false);
-            }
-        }
+            eprintln!("ERR! Authorize: get_resource_groups {:?}", uri);
+            return Err(e);
+        },
+        Ok(None) => {
+            return Ok(false);
+        },
     }
 
     Ok(false)
@@ -265,10 +259,10 @@ pub(crate) fn final_check(azc: &mut AzContext, trace: &mut Trace) -> bool {
 }
 
 pub(crate) fn get_filter(id: &str, db: &dyn Storage) -> Option<(String, u8)> {
-    let mut filter_value;
+    let mut filter_value = "".to_string();
     let mut filter_allow_access_to_other = 0;
     match db.get(&(FILTER_PREFIX.to_owned() + id)) {
-        Ok(data) => {
+        Ok(Some(data)) => {
             filter_value = data;
             if filter_value.len() < 3 {
                 filter_value.clear();
@@ -284,14 +278,12 @@ pub(crate) fn get_filter(id: &str, db: &dyn Storage) -> Option<(String, u8)> {
                 }
             }
             //eprintln!("Authorize:uri=[{}], filter_value=[{}]", uri, filter_value);
-        }
+        },
         Err(e) => {
-            if e < 0 {
-                eprintln!("ERR! Authorize: _authorize {:?}, err={:?}", id, e);
-            }
-            //return Err(e);
+            eprintln!("ERR! Authorize: _authorize {:?}, err={:?}", id, e);
             return None;
-        }
+        },
+        _ => {},
     }
     Some((filter_value, filter_allow_access_to_other))
 }

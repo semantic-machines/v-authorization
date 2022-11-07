@@ -318,7 +318,7 @@ fn authorize_obj_groups(id: &str, request_access: u8, db: &dyn Storage, trace: &
     None
 }
 
-pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &dyn Storage, trace: &mut Trace) -> io::Result<u8> {
+pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &dyn Storage, trace: &mut Trace) -> Result<u8, std::io::Error> {
     let s_groups = &mut HashMap::new();
 
     let mut azc = AzContext {

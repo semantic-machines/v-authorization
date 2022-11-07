@@ -1,6 +1,6 @@
 [package]
 name = "v_authorization"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["itiu <ValeriyBushenev@gmail.com>", "muller95 <muller95@yandex.ru>"]
 edition = "2018"
 description = "authorization lib"

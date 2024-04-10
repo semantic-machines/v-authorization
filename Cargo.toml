@@ -1,8 +1,8 @@
 [package]
 name = "v_authorization"
-version = "0.1.7"
+version = "0.2.0"
 authors = ["itiu <ValeriyBushenev@gmail.com>", "muller95 <muller95@yandex.ru>"]
-edition = "2018"
+edition = "2021"
 description = "authorization lib"
 repository = "https://github.com/semantic-machines/v_authorization"
 license = "MIT"

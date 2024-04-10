@@ -46,7 +46,7 @@ pub trait AuthorizationContext {
 }
 
 pub trait Storage {
-    fn get(&self, key: &str) -> io::Result<Option<String>>;
+    fn get(&mut self, key: &str) -> io::Result<Option<String>>;
     fn fiber_yield(&self);
 }
 
@@ -76,7 +76,7 @@ pub(crate) fn get_resource_groups(
     access: u8,
     results: &mut HashMap<String, Right>,
     level: u8,
-    db: &dyn Storage,
+    db: &mut dyn Storage,
     ignore_exclusive: bool,
 ) -> io::Result<bool> {
     if level > 32 {
@@ -258,7 +258,7 @@ pub(crate) fn final_check(azc: &mut AzContext, trace: &mut Trace) -> bool {
     res
 }
 
-pub(crate) fn get_filter(id: &str, db: &dyn Storage) -> Option<(String, u8)> {
+pub(crate) fn get_filter(id: &str, db: &mut dyn Storage) -> Option<(String, u8)> {
     let mut filter_value = "".to_string();
     let mut filter_allow_access_to_other = 0;
     match db.get(&(FILTER_PREFIX.to_owned() + id)) {

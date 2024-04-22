@@ -1,9 +1,7 @@
 /// This module gives function to check access of user to object
 pub mod common;
-pub mod formats;
 
 use crate::common::*;
-use crate::formats::*;
 use std::collections::HashMap;
 use std::io;
 
@@ -17,7 +15,7 @@ pub struct Right {
 }
 
 impl Right {
-    fn new(id: &str) -> Self {
+    pub fn new(id: &str) -> Self {
         Right {
             id: id.to_string(),
             access: 15,
@@ -107,7 +105,7 @@ fn authorize_obj_group(
             let permissions: &mut Vec<Right> = &mut Vec::new();
 
             // Декодирование прав доступа из полученной строки
-            decode_rec_to_rights(&str, permissions);
+            db.decode_rec_to_rights(&str, permissions);
 
             // Перебор полученных прав доступа
             for permission in permissions {
@@ -222,7 +220,7 @@ fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8,
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + uri)) {
         Ok(Some(groups_str)) => {
             let groups_set: &mut Vec<Right> = &mut Vec::new();
-            decode_rec_to_rights(&groups_str, groups_set);
+            db.decode_rec_to_rights(&groups_str, groups_set);
 
             groups_set_len = groups_set.len();
 
@@ -384,7 +382,7 @@ pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &mut dyn Stora
     first_level_object_groups.push(Right::new(id));
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + id)) {
         Ok(Some(groups_str)) => {
-            decode_rec_to_rights(&groups_str, first_level_object_groups);
+            db.decode_rec_to_rights(&groups_str, first_level_object_groups);
         },
         Err(_e) => {},
         _ => {},

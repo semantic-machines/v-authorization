@@ -1,5 +1,4 @@
-use crate::formats::*;
-use crate::{AzContext, Right};
+use crate::{AzContext, Right, RightSet};
 use core::fmt;
 use std::collections::HashMap;
 use std::io;
@@ -10,6 +9,10 @@ pub const MEMBERSHIP_PREFIX: &str = "M";
 pub static ACCESS_8_LIST: [u8; 4] = [1, 2, 4, 8];
 pub static ACCESS_8_FULL_LIST: [u8; 8] = [1, 2, 4, 8, 16, 32, 64, 128];
 pub static ACCESS_PREDICATE_LIST: [&str; 9] = ["", "v-s:canCreate", "v-s:canRead", "", "v-s:canUpdate", "", "", "", "v-s:canDelete"];
+
+pub const M_IS_EXCLUSIVE: char = 'X';
+pub const M_IGNORE_EXCLUSIVE: char = 'N';
+pub static ACCESS_C_FULL_LIST: [char; 8] = ['M', 'R', 'U', 'P', 'm', 'r', 'u', 'p'];
 
 /// Битовые поля для прав
 #[derive(PartialEq, Eq)]
@@ -48,6 +51,8 @@ pub trait AuthorizationContext {
 pub trait Storage {
     fn get(&mut self, key: &str) -> io::Result<Option<String>>;
     fn fiber_yield(&self);
+    fn decode_rec_to_rights(&self, src: &str, result: &mut Vec<Right>) -> bool;
+    fn decode_rec_to_rightset(&self, src: &str, new_rights: &mut RightSet) -> bool;
 }
 
 impl fmt::Debug for Right {
@@ -86,7 +91,7 @@ pub(crate) fn get_resource_groups(
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + uri)) {
         Ok(Some(groups_str)) => {
             let groups_set: &mut Vec<Right> = &mut Vec::new();
-            decode_rec_to_rights(&groups_str, groups_set);
+            db.decode_rec_to_rights(&groups_str, groups_set);
 
             for (idx, group) in groups_set.iter_mut().enumerate() {
                 if group.id.is_empty() {
@@ -268,7 +273,7 @@ pub(crate) fn get_filter(id: &str, db: &mut dyn Storage) -> Option<(String, u8)>
                 filter_value.clear();
             } else {
                 let filters_set: &mut Vec<Right> = &mut Vec::new();
-                decode_rec_to_rights(&filter_value, filters_set);
+                db.decode_rec_to_rights(&filter_value, filters_set);
 
                 if !filters_set.is_empty() {
                     let el = &mut filters_set[0];

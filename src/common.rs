@@ -1,4 +1,6 @@
-use crate::{AzContext, Right, RightSet};
+use crate::{ACLRecord, ACLRecordSet, AzContext};
+use chrono::DateTime;
+use chrono::Utc;
 use core::fmt;
 use std::collections::HashMap;
 use std::io;
@@ -51,11 +53,12 @@ pub trait AuthorizationContext {
 pub trait Storage {
     fn get(&mut self, key: &str) -> io::Result<Option<String>>;
     fn fiber_yield(&self);
-    fn decode_rec_to_rights(&self, src: &str, result: &mut Vec<Right>) -> bool;
-    fn decode_rec_to_rightset(&self, src: &str, new_rights: &mut RightSet) -> bool;
+    fn decode_rec_to_rights(&self, src: &str, result: &mut Vec<ACLRecord>) -> (bool, Option<DateTime<Utc>>);
+    fn decode_rec_to_rightset(&self, src: &str, new_rights: &mut ACLRecordSet) -> (bool, Option<DateTime<Utc>>);
+    fn decode_filter(&self, filter_value: String) -> (Option<ACLRecord>, Option<DateTime<Utc>>);
 }
 
-impl fmt::Debug for Right {
+impl fmt::Debug for ACLRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({}, {}, {}, {})", self.id, access_to_pretty_string(self.access), self.marker, self.level)
     }
@@ -79,7 +82,7 @@ pub(crate) fn get_resource_groups(
     trace: &mut Trace,
     uri: &str,
     access: u8,
-    results: &mut HashMap<String, Right>,
+    results: &mut HashMap<String, ACLRecord>,
     level: u8,
     db: &mut dyn Storage,
     ignore_exclusive: bool,
@@ -90,7 +93,7 @@ pub(crate) fn get_resource_groups(
 
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + uri)) {
         Ok(Some(groups_str)) => {
-            let groups_set: &mut Vec<Right> = &mut Vec::new();
+            let groups_set: &mut Vec<ACLRecord> = &mut Vec::new();
             db.decode_rec_to_rights(&groups_str, groups_set);
 
             for (idx, group) in groups_set.iter_mut().enumerate() {
@@ -154,7 +157,7 @@ pub(crate) fn get_resource_groups(
 
                 results.insert(
                     group.id.clone(),
-                    Right {
+                    ACLRecord {
                         id: group.id.clone(),
                         access: group.access,
                         marker: new_group_marker,
@@ -263,32 +266,16 @@ pub(crate) fn final_check(azc: &mut AzContext, trace: &mut Trace) -> bool {
     res
 }
 
-pub(crate) fn get_filter(id: &str, db: &mut dyn Storage) -> Option<(String, u8)> {
-    let mut filter_value = "".to_string();
-    let mut filter_allow_access_to_other = 0;
-    match db.get(&(FILTER_PREFIX.to_owned() + id)) {
-        Ok(Some(data)) => {
-            filter_value = data;
-            if filter_value.len() < 3 {
-                filter_value.clear();
-            } else {
-                let filters_set: &mut Vec<Right> = &mut Vec::new();
-                db.decode_rec_to_rights(&filter_value, filters_set);
-
-                if !filters_set.is_empty() {
-                    let el = &mut filters_set[0];
-
-                    filter_value = el.id.clone();
-                    filter_allow_access_to_other = el.access;
-                }
-            }
-            //eprintln!("Authorize:uri=[{}], filter_value=[{}]", uri, filter_value);
-        },
+pub(crate) fn get_filter(id: &str, db: &mut dyn Storage) -> (Option<ACLRecord>, Option<DateTime<Utc>>) {
+    let filter_value = match db.get(&(FILTER_PREFIX.to_owned() + id)) {
+        Ok(Some(data)) => data,
         Err(e) => {
             eprintln!("ERR! Authorize: _authorize {:?}, err={:?}", id, e);
-            return None;
+            return (None, None);
         },
-        _ => {},
-    }
-    Some((filter_value, filter_allow_access_to_other))
+        _ => "".to_string(),
+    };
+
+    let res = db.decode_filter(filter_value);
+    res
 }

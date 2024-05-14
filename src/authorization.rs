@@ -5,7 +5,7 @@ use crate::common::*;
 use std::collections::HashMap;
 use std::io;
 
-pub struct Right {
+pub struct ACLRecord {
     pub id: String,
     pub access: u8,
     pub marker: char,
@@ -14,9 +14,9 @@ pub struct Right {
     pub counters: HashMap<char, u16>,
 }
 
-impl Right {
+impl ACLRecord {
     pub fn new(id: &str) -> Self {
-        Right {
+        ACLRecord {
             id: id.to_string(),
             access: 15,
             marker: 0 as char,
@@ -25,9 +25,19 @@ impl Right {
             counters: HashMap::default(),
         }
     }
+    pub fn new_with_access(id: &str, access: u8) -> Self {
+        ACLRecord {
+            id: id.to_string(),
+            access,
+            marker: 0 as char,
+            is_deleted: false,
+            level: 0,
+            counters: HashMap::default(),
+        }
+    }
 }
 
-pub type RightSet = HashMap<String, Right>;
+pub type ACLRecordSet = HashMap<String, ACLRecord>;
 
 pub(crate) struct AzContext<'a> {
     id: &'a str,
@@ -40,7 +50,7 @@ pub(crate) struct AzContext<'a> {
     tree_groups_s: &'a mut HashMap<String, String>,
     walked_groups_o: &'a mut HashMap<String, u8>,
     tree_groups_o: &'a mut HashMap<String, String>,
-    subject_groups: &'a mut HashMap<String, Right>,
+    subject_groups: &'a mut HashMap<String, ACLRecord>,
     checked_groups: &'a mut HashMap<String, u8>,
     filter_value: String,
 }
@@ -102,7 +112,7 @@ fn authorize_obj_group(
     // Попытка получения данных об ACL из базы данных
     match db.get(&acl_key) {
         Ok(Some(str)) => {
-            let permissions: &mut Vec<Right> = &mut Vec::new();
+            let permissions: &mut Vec<ACLRecord> = &mut Vec::new();
 
             // Декодирование прав доступа из полученной строки
             db.decode_rec_to_rights(&str, permissions);
@@ -219,7 +229,7 @@ fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8,
 
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + uri)) {
         Ok(Some(groups_str)) => {
-            let groups_set: &mut Vec<Right> = &mut Vec::new();
+            let groups_set: &mut Vec<ACLRecord> = &mut Vec::new();
             db.decode_rec_to_rights(&groups_str, groups_set);
 
             groups_set_len = groups_set.len();
@@ -376,10 +386,10 @@ pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &mut dyn Stora
     db.fiber_yield();
 
     azc.subject_groups = s_groups;
-    azc.subject_groups.insert(user_id.to_string(), Right::new(user_id));
+    azc.subject_groups.insert(user_id.to_string(), ACLRecord::new(user_id));
 
-    let first_level_object_groups: &mut Vec<Right> = &mut Vec::new();
-    first_level_object_groups.push(Right::new(id));
+    let first_level_object_groups: &mut Vec<ACLRecord> = &mut Vec::new();
+    first_level_object_groups.push(ACLRecord::new(id));
     match db.get(&(MEMBERSHIP_PREFIX.to_owned() + id)) {
         Ok(Some(groups_str)) => {
             db.decode_rec_to_rights(&groups_str, first_level_object_groups);
@@ -393,11 +403,11 @@ pub fn authorize(id: &str, user_id: &str, request_access: u8, db: &mut dyn Stora
 
     for gr_obj in first_level_object_groups.iter() {
         if azc.filter_value.is_empty() {
-            if let Some((value, filter_allow_access_to_other)) = get_filter(&gr_obj.id, db) {
-                filter_value = value;
+            if let (Some(f), _) = get_filter(&gr_obj.id, db) {
+                filter_value = f.id;
 
                 if !filter_value.is_empty() {
-                    request_access_with_filter = request_access & filter_allow_access_to_other;
+                    request_access_with_filter = request_access & f.access;
                 }
                 break;
             }

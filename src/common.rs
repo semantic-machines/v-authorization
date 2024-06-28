@@ -60,6 +60,14 @@ pub trait Storage {
 
 impl fmt::Debug for ACLRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let marker = if self.marker == M_IGNORE_EXCLUSIVE {
+            "-E"
+        } else if self.marker == M_IS_EXCLUSIVE {
+            "+E"
+        } else {
+            "?"
+        };
+
         write!(f, "({}, {}, {}, {})", self.id, access_to_pretty_string(self.access), self.marker, self.level)
     }
 }

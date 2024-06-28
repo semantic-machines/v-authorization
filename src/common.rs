@@ -68,7 +68,7 @@ impl fmt::Debug for ACLRecord {
             "?"
         };
 
-        write!(f, "({}, {}, {}, {})", self.id, access_to_pretty_string(self.access), self.marker, self.level)
+        write!(f, "({}, {}, {}, {})", self.id, access_to_pretty_string(self.access), marker, self.level)
     }
 }
 

@@ -3,6 +3,7 @@ pub mod authorize_obj_group;
 pub mod common;
 pub mod prepare_obj_group;
 pub mod trace;
+pub mod record_formats;
 
 use crate::authorize_obj_group::authorize_obj_group;
 use crate::common::*;

@@ -287,3 +287,169 @@ pub(crate) fn get_filter(id: &str, db: &mut dyn Storage) -> (Option<ACLRecord>, 
     let res = db.decode_filter(filter_value);
     res
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_access_to_pretty_string() {
+        // Test individual permissions
+        assert_eq!(access_to_pretty_string(Access::CanCreate as u8), "C ");
+        assert_eq!(access_to_pretty_string(Access::CanRead as u8), "R ");
+        assert_eq!(access_to_pretty_string(Access::CanUpdate as u8), "U ");
+        assert_eq!(access_to_pretty_string(Access::CanDelete as u8), "D ");
+        
+        // Test combined permissions
+        assert_eq!(access_to_pretty_string(Access::CanRead as u8 | Access::CanUpdate as u8), "R U ");
+        assert_eq!(access_to_pretty_string(15), "C R U D "); // All positive rights
+        
+        // Test deny permissions
+        assert_eq!(access_to_pretty_string(Access::CantCreate as u8), "!C ");
+        assert_eq!(access_to_pretty_string(Access::CantRead as u8), "!R ");
+        assert_eq!(access_to_pretty_string(Access::CantUpdate as u8), "!U ");
+        assert_eq!(access_to_pretty_string(Access::CantDelete as u8), "!D ");
+        
+        // Test zero access
+        assert_eq!(access_to_pretty_string(0), "");
+    }
+    
+    #[test]
+    fn test_access_constants() {
+        // Test that access constants are correctly defined
+        assert_eq!(Access::CanCreate as u8, 1);
+        assert_eq!(Access::CanRead as u8, 2);
+        assert_eq!(Access::CanUpdate as u8, 4);
+        assert_eq!(Access::CanDelete as u8, 8);
+        assert_eq!(Access::CantCreate as u8, 16);
+        assert_eq!(Access::CantRead as u8, 32);
+        assert_eq!(Access::CantUpdate as u8, 64);
+        assert_eq!(Access::CantDelete as u8, 128);
+    }
+    
+    #[test]
+    fn test_acl_record_creation() {
+        // Test ACLRecord::new
+        let record = ACLRecord::new("test_id");
+        assert_eq!(record.id, "test_id");
+        assert_eq!(record.access, 15); // Full access by default
+        assert_eq!(record.marker, 0 as char);
+        assert_eq!(record.is_deleted, false);
+        assert_eq!(record.level, 0);
+        
+        // Test ACLRecord::new_with_access
+        let record2 = ACLRecord::new_with_access("test_id2", Access::CanRead as u8);
+        assert_eq!(record2.id, "test_id2");
+        assert_eq!(record2.access, Access::CanRead as u8);
+        assert_eq!(record2.marker, 0 as char);
+        assert_eq!(record2.is_deleted, false);
+        assert_eq!(record2.level, 0);
+    }
+    
+    #[test]
+    fn test_acl_record_debug() {
+        // Test that ACLRecord debug output is readable
+        let record = ACLRecord::new_with_access("test_user", Access::CanRead as u8 | Access::CanUpdate as u8);
+        let debug_str = format!("{:?}", record);
+        assert!(debug_str.contains("test_user"));
+        assert!(debug_str.contains("R U"));
+    }
+    
+    #[test]
+    fn test_prefixes() {
+        // Test that prefixes are correctly defined
+        assert_eq!(PERMISSION_PREFIX, "P");
+        assert_eq!(FILTER_PREFIX, "F");
+        assert_eq!(MEMBERSHIP_PREFIX, "M");
+    }
+    
+    #[test]
+    fn test_exclusive_markers() {
+        // Test exclusive marker constants
+        assert_eq!(M_IS_EXCLUSIVE, 'X');
+        assert_eq!(M_IGNORE_EXCLUSIVE, 'N');
+    }
+    
+    #[test]
+    fn test_get_path() {
+        let mut tree = HashMap::new();
+        tree.insert("child".to_string(), "parent".to_string());
+        tree.insert("parent".to_string(), "grandparent".to_string());
+        
+        let path = get_path(&mut tree, "child".to_string());
+        // Function removes elements as it traverses, so grandparent is not found
+        assert_eq!(path, "->parent->child");
+    }
+    
+    #[test]
+    fn test_get_path_empty() {
+        let mut tree = HashMap::new();
+        let path = get_path(&mut tree, "nonexistent".to_string());
+        assert_eq!(path, "");
+    }
+    
+    #[test]
+    fn test_trace_functions() {
+        // Test print_to_trace_acl
+        {
+            let mut acl = String::new();
+            let mut group = String::new();
+            let mut info = String::new();
+            let mut trace = Trace {
+                acl: &mut acl,
+                is_acl: false,
+                group: &mut group,
+                is_group: false,
+                info: &mut info,
+                is_info: false,
+                str_num: 0,
+            };
+            
+            print_to_trace_acl(&mut trace, "test acl".to_string());
+            drop(trace); // Release mutable borrows
+            assert_eq!(acl, "test acl");
+        }
+        
+        // Test print_to_trace_group
+        {
+            let mut acl = String::new();
+            let mut group = String::new();
+            let mut info = String::new();
+            let mut trace = Trace {
+                acl: &mut acl,
+                is_acl: false,
+                group: &mut group,
+                is_group: false,
+                info: &mut info,
+                is_info: false,
+                str_num: 0,
+            };
+            
+            print_to_trace_group(&mut trace, "test group".to_string());
+            drop(trace); // Release mutable borrows
+            assert_eq!(group, "test group");
+        }
+        
+        // Test print_to_trace_info
+        {
+            let mut acl = String::new();
+            let mut group = String::new();
+            let mut info = String::new();
+            let mut trace = Trace {
+                acl: &mut acl,
+                is_acl: false,
+                group: &mut group,
+                is_group: false,
+                info: &mut info,
+                is_info: false,
+                str_num: 0,
+            };
+            
+            print_to_trace_info(&mut trace, "test info".to_string());
+            let str_num = trace.str_num;
+            drop(trace); // Release mutable borrows
+            assert_eq!(info, "1 test info");
+            assert_eq!(str_num, 1);
+        }
+    }
+}

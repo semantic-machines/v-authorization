@@ -5,7 +5,7 @@ use crate::common::{
 use crate::{ACLRecord, AzContext};
 use std::io;
 
-pub(crate) fn authorize_obj_group(
+pub fn authorize_obj_group(
     azc: &mut AzContext,
     trace: &mut Trace,
     request_access: u8,

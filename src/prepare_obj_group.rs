@@ -3,7 +3,7 @@ use crate::common::{Storage, Trace, MEMBERSHIP_PREFIX, M_IS_EXCLUSIVE};
 use crate::{ACLRecord, AzContext};
 use std::io;
 
-pub(crate) fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8, uri: &str, access: u8, level: u8, db: &mut dyn Storage) -> io::Result<bool> {
+pub fn prepare_obj_group(azc: &mut AzContext, trace: &mut Trace, request_access: u8, uri: &str, access: u8, level: u8, db: &mut dyn Storage) -> io::Result<bool> {
     if level > 32 {
         return Ok(false);
     }

@@ -13,3 +13,4 @@ path = "src/authorization.rs"
 [dependencies]
 chrono = "0.4.19"
 chrono-tz = "0.5.3"
+serde_json = "1.0"
